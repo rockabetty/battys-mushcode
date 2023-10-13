@@ -1,0 +1,217 @@
+@@ @@@@@@@@@@@@@
+@@
+@@ +NOTES COMMMANDS
+@@
+@@ This code lets you manage hierarchical notes on characters, objects, and places. 
+@@ This code was orignally built for a World of Darkness game, so its helpfiles refer to WOD concepts
+@@ like 'clan' and 'craft'.
+@@ 
+@@ Helpfiles come with this code and are towards the bottom of the document.  
+@@ You can read the formatted Helpfiles by typing "+help notes" once installed.
+@@
+@@ @@@@@@@@@@@@
+
+@@ @@@@@@@@@@@@@
+
+@@ @@@@@@@@@@@@@
+@@
+@@ Requirements/Dependencies!
+@@
+@@ @@@@@@@@@@@@@
+
+@@ You will need the central reference object which should be installed by 'start_here' but can be created on the fly.
+think if(not(v(db`bigRef)),set(me,db`bigRef:[create(Batty's Big Reference Object)]))  
+
+@@ And of course the notes items!
+think if(not(v(global`notes)),set(me,global`notes:[create(GLOBAL: NOTES)]))
+@set [v(global`notes)] = WIZARD;
+think if(not(v(db`notes)),set(me,db`notes:[create(GLOBAL: NOTES)]))
+@set [v(db`notes)] = WIZARD;
+@parent [v(db`notes)] = [v(db`bigRef)]
+&db`notes [v(db`bigRef)] = [v(db`notes)]
+
+@@ You will need an object for SQL access.
+think if(not(v(db`sql)),set(me,db`sql:[create(FUNCTIONS: SQL Access )]))  
+@set [v(db`sql)] = WIZARD
+
+@@ Characters And Sheets object needs to exist.
+@@ TO DO - Flesh out Characters And Sheets
+think if(not(v(db`sheet),set(me,db`sheet:[create(FUNCTIONS: Characters And Sheets)])))
+@SET [v(db`sheet)] = WIZARD
+
+&schema`notes [v(db`sql)] = create table if not exists notes (id SERIAL PRIMARY KEY, dbref TEXT, title TEXT, contents TEXT, official BOOLEAN default FALSE, public BOOLEAN default TRUE, staff_only BOOLEAN default FALSE, parent_id INT REFERENCES notes (id), created DATE default CURRENT_TIMESTAMP, modified DATE, author_id INT REFERENCES characters(id) ); alter table notes drop constraint if exists unique_title; alter table notes add constraint unique_title unique (dbref, title); alter table notes drop constraint if exists fk_monster_id; alter table notes add column monster_id references monsters (id); alter table notes drop constraint if exists fk_organization_id; alter table notes add column organization_id references organizations (id); alter table notes drop constraint if exists fk_stat_id; alter table notes add column stat_id references stats (id); alter table notes add column stat_value int;
+
+think [ansi(hw,Creating Notes tables!)]
+think sql( v([get(v(db`notes)/schema`notes)]) )
+
+@@
+@@ DEPENDENCIES:
+@@ heading() - A nice header.
+@@ Part of Basic Package
+@@ isStaff() - returns 1 if user is staff, 0 otherwise.
+@@ Install Basic Package to get it.
+@@
+@@ You'll need the Character Accounts package.
+@@ VALIDATE`CHARACTER
+@@ VALIDATE`NPC
+@@ VALIDATE`CHARACTER.OMNISCIENT
+@@
+@@ If you want notes on rooms you'll want the Build system's "validate room" 
+@@ &validate`room [setq(roomList,LSEARCH(all,eroom,\[strmatch(name(##),*%0*)\]))][if(gt(words(r(roomList)),1),setq(error,The query "%0" matches multiple rooms: [iter(r(roomList),[bullet()]Room ##: [name(##)])]%RPlease be more specific or use a DBREF # from the list.))]
+
+
+@@ @@@@@@@@@@@@@
+@@
+@@ SQL CRUD
+@@ These functions are dedicated to creating, reading, updating, and deleting notes.
+@@
+@@ @@@@@@@@@@@@@
+
+
+@@ Create!
+&insert`note [v(db`sql)] = sql(insert into notes (dbref%, title%, public%, contents, official, author_id) values ('%0'%, '[sqlescape(lcstr(trim(%1)))]'%, null%, '[sqlescape(%2)]'%, [if(isstaff(%#),true,null)], [u(get`character`id,%#)] ) on conflict (dbref%, title) do update set contents = '[sqlescape(%2)]' )
+
+
+@@ Read!
+&get`note`contents [v(db`sql)] = sql(select contents from notes where id = %0)
+&get`note`title [v(db`sql)] = sql(select title from notes where id = %0)
+&get`note`monster [v(db`sql)] = sql(select name from monsters m join notes n on n.monster_id = m.id where n.id = %0)
+&get`note`organization [v(db`sql)] = sql(select name from organizations o join notes n on n.organization_id = o.id where n.id = %0)
+&get`note`parent [v(db`sql)] = sql(select parent_id from notes where id = %0)
+&get`note`staff [v(db`sql)] = sql(select 1 from notes where id = %0 and staff_only is true)
+&get`note`public [v(db`sql)] = sql(select 1 from notes where id = %0 and public is true)
+&get`note`stat [v(db`sql)] = sql(select stat_id, stat_value from notes where id = %0)
+&get`note`approved [v(db`sql)] = sql(select 1 from notes where id = %0 and official is true)
+&get`note`target [v(db`sql)] = sql(select dbref from notes where id = %0)
+&get`note`created [v(db`sql)] = squish(sql(select to_char(created, 'Month DD, YYYY') from notes where id = %0))
+&get`note`modified [v(db`sql)] = sql(select modified from notes where id = %0)
+&get`note`author [v(db`sql)] = sql(select author_id from notes where id = %0)
+&get`note`children [v(db`sql)] = sql(select title from notes where parent_id = %0 [if(not(isStaff(%#)),and staff_only is not true)],|)
+&get`note`children.detailed [v(db`sql)] = sql(select title%, staff_only%, official) from notes where dbref='%0)'
+&get`note`parent [v(db`sql)] = sql(select parent_id from notes where id = %0)
+&get`notes.detailed [v(db`sql)] = iter(sql( select distinct notes.title%, notes.staff_only%, notes.official from notes left outer join bridge_characters_stats bcs on bcs.stat_id = notes.stat_id where parent_id is null AND dbref='%0' AND [if(isStaff(%#),u(where`note.staffView),u(where`note.playerView))] , |,~), [if(extract(lit(##),2,1,~),ansi(hy,!),if(last(lit(##),~),ansi(hg,+),ansi(hr,-)))] [first(lit(##),~)] ,|,|)
+&get`note`id [v(db`sql)] = sql(select distinct notes.id from notes left outer join bridge_characters_stats bcs on bcs.stat_id = notes.stat_id where [u(where`textlike,notes.title,%1)] and dbref='%0' AND [if(isStaff(%#),u(where`note.staffView),u(where`note.playerView))] limit 1)
+&get`notes [v(db`sql)] = sql( select distinct notes.id from notes left outer join bridge_characters_stats bcs on bcs.stat_id = notes.stat_id where parent_id is null AND dbref='%0' AND [if(isStaff(%#),u(where`note.staffView),u(where`note.playerView))])
+&get`notes.own_infos [v(db`sql)] = sql(select distinct notes.id from notes where dbref='%#' and public is true)
+
+
+@@ Update!
+&set`note`contents [v(db`sql)] = sql(update notes set contents = '[sqlescape(%1)]' where id = %0)
+&set`note`title [v(db`sql)] = sql(update notes set title = '[lcstr(sqlescape(%1))]' where id = %0)
+&set`note`monster [v(db`sql)] = sql(update notes set monster_id = [if(isnum(%1),%1,u(get`monster`id,%1))] where id = %0)
+&set`note`organization [v(db`sql)] = sql(update notes set organization_id = [if(isnum(%1),%1,u(get`organization`id,%1))] where id = %0)
+&set`note`parent [v(db`sql)] = sql(update notes set parent_id = %1 where id = %0)
+&set`note`staff [v(db`sql)] = sql(update notes set staff_only = %1 where id = %0)
+&set`note`public [v(db`sql)] = sql(update notes set public = %1 where id = %0)
+&set`note`stat [v(db`sql)] = [sql(update notes set stat_id = %1, stat_value = %2 where id = %0)] | id %1 value %2
+&set`note`approved [v(db`sql)] = sql(update notes set official =%1 where id = %0)
+&set`note`target [v(db`sql)] = sql(update notes set dbref = '%1' where id = %0)
+&set`note`author [v(db`sql)] = sql(update notes set author_id = [u(get`character`id,%1)] where id = %0)
+&set`note`parent [v(db`sql)] = sql(update notes set parent_id = %1 where id = %0)
+
+
+@@ Delete!
+&delete`note [v(db`sql)] = sql(delete from notes where id = %0)
+
+
+@@ Query WHERE Fun
+&where`note.validCharacter [v(db`sql)] = [u(v(db`sheet)/validate`character,%0)][if(r(dbref),dbref in ([iter(r(dbref),'##',,%,)]),FALSE)]
+&where`note.validRoom [v(db`sql)] = [setq(roomList,iter(LSEARCH(all,eroom,\[strmatch(name(##),*%0*)\]),'##',,%,))][if(r(roomList),dbref in ([r(roomList)]),FALSE)]
+&where`note.playerView [v(db`sql)] = (notes.author_id = [u(get`character`id,%#)] OR notes.dbref = '%#' OR notes.public IS TRUE) AND notes.staff_only IS NOT TRUE AND (notes.monster_id IS NULL OR notes.monster_id IN ([u(get`monster`id,template(%#))], [u(get`character`monster.id,%#)]) ) AND (notes.organization_id IS NULL OR notes.organization_id = [u(get`character`sect.id,%#)]) AND (notes.stat_id IS NULL OR (notes.stat_id = bcs.stat_id AND notes.value <= bcs.value AND bcs.character_id = [u(get`character`id,%#)]) )
+&where`note.staffView [v(db`sql)] = true
+
+@@ @@@@@@@@@@@@@
+@@
+@@ The Functions!
+@@ validate - validate user input!
+@@ show - formats data for HUMAN CONSUMPTION.
+@@ permissions - provides a list of verbs and leaves the staff-only one behind an isStaff.
+@@
+@@ @@@@@@@@@@@@@
+
+&validate`note_target [v(db`notes)]=[switch(%0,me,1[setq(target,%#)],here,1[setq(target,%l)],[u(v(db`sheet)/validate`Character,%0,hasflag(%#/ministaffpermissions,wizard))][if(not(or(r(pcref),r(dbref))),u(v(db`Build)/validate`Room,%0))][or(eq(1,words(r(roomList))),r(pcref),not(r(error)))][setq(target, first( [r(pcref)] [r(dbref)] [r(roomList)]))])]
+&show`note.details [v(db`notes)] = %R~~~[u(show`note.created,%0)] [u(show`note.whoCanSee,%0)] [u(show`note.status,%0)] [u(show`note.sorting,%0)]
+&show`note.sorting [v(db`notes)] =[if(setr(parent,u(v(db`sql)/get`note`parent,%0)), [bullet()]Filed under "[u(v(db`sql)/get`note`title,r(parent))]")] [if(setr(children,u(v(db`sql)/get`note`children,%0)),%R[lheading(Also See...)]%R[table(r(children),-26,80,|)] %R(use +note/see) )]
+&show`note.status [v(db`notes)] = [bullet()][if(u(v(db`sql)/get`note`approved,%0),Staff Approved Note,Unofficial Note)]
+&show`note.created [v(db`notes)] = if(setr(author,u(v(db`sql)/get`note`author,%0)),[bullet()]Written by [name(u(v(db`sql)/get`character`dbref,r(author)))] [if(setr(created,u(v(db`sql)/get`note`created,%0)), on [r(created)] )
+&show`note.whoCanSee [v(db`notes)] = [bullet()][if(u(v(db`sql)/get`note`staff,%0),Only staff and the original author can view this note., [if(u(v(db`sql)/get`note`public,%0),Public note visible to [if(or(u(show`note.monsterlocked,%0),u(show`note.sectlocked,%0),setr(stat,u(v(db`sql)/get`note`stat,%0))),[trim([r(sect)] [r(monster)])] characters,all characters)][if(r(stat),%Bwith a [u(v(db`sql)/get`stat`name,first(r(stat)))] in [u(v(db`sql)/get`stat`id,last(r(stat)))])] ,[itemize(Staff [setunion(if(pmatch(r(target)),name(r(target))), name(u(v(db`sql)/get`character`dbref,u(v(db`sql)/get`note`author,%0))))])] can view this note.)] )]
+&show`note.Monsterlocked [v(db`notes)]=if(setr(monster,u(v(db`sql)/get`note`monster,%0)),1,0)
+&show`note.Sectlocked [v(db`notes)]=if(setr(sect,u(v(db`sql)/get`note`organization,%0)),1,0)
+&permissions [v(db`notes)]=see edit delete file unfile publish private rename lock unlock [if(isStaff(%#),staff show approve revoke)]
+
+@@ @@@@@@@@@@@@@
+@@
+@@ The Commands!
+@@ +note/<verb> <arguments>: Create, edit and delete notes!
+@@ +notes: Display your own notes!
+@@ +notes <target>: See a target's notes.
+@@
+@@ @@@@@@@@@@@@@
+
+
+&CMD`INTERACT #59=$+note/* *:@assert [u(v(db`notes)/validate`note_target,if(strmatch(first(%1,=),*/*),first(%1,/),me))]=@pemit %#=[error()][r(error)];@break [strmatch(write set,*%0*)]=@pemit %#=[u(v(db`notes)/interact`write,r(target),%1)];@assert [match(u(v(db`notes)/permissions),%0)]=@pemit %#=[error()]"+note/%0" is not a valid note command type.  Did you make a typo?;@assert t(setr(noteId,[u(v(db`sql)/get`note`id,r(target),first(last(%1,/),=))]))=@pemit %#=[error()]There is not a note called "[first(last(%1,/),=)]" name on [name(r(target))].;@assert [u(v(db`notes)/validate`interaction,%#,%0,r(noteId))]=@pemit %#=[error()]This note is approved by staff and thus needs staff to be modified.  Please ask staff to modify this note for you!;@pemit %#=[u(v(db`notes)/interact`%0,r(noteID),rest(%1,=))]
+
+@@Create 
+&interact`write [v(db`notes)]=[if(strmatch(%1,*=*),[prefix()]A note was set on [name(r(target))] called [last(first(%1,=),/)].[u(v(db`sql)/insert`note,r(target),last(first(%1,=),/),rest(%1,=))], [error()]I think you want to write a note on [name(r(target))] but I need to be able to distinguish the note title from the note contents.  Please try "[hilight(+note/write <title>=<contents>)].")]
+&validate`interaction [v(db`notes)]=if(isStaff(%0),1,if(match(write set edit delete,%1), not(t(u(v(db`sql)/get`note`approved,%2))) , 1 ))
+
+@@Read
+&cmd`+notes_target [v(global`notes)] = $+notes *:@assert [u(v(db`notes)/validate`note_target,%0)]=@pemit %#=[error()][r(error)];@pemit %#=[heading( name(r(target)) )]%R[if(setr(noteList,u(v(db`sql)/get`notes.detailed,r(target))),[table(r(noteList),-25,80,|)]%R[bullet()]See details with [hilight(+note/see %0/<title>)][bullet()]Make or update notes with [hilight(+note/set %0/<title>=<contents>)][bullet()]Remove notes with [hilight(+note/delete %0/<title>)][bullet()]Legend: [ansi(hg,+)] Approved | [ansi(hr,-)] Not Approved [if(isStaff(%#),| [ansi(hy,!)] Staff-only)],[center(No visible notes.,79)]%R)] [footer()]
+&cmd`+notes [v(global`notes)] = $+notes:@pemit %#=[heading(Your +Notes)]%R[table(setr(notelist,u(v(db`sql)/get`notes.detailed,%#)),-25,80,|)][if(r(notelist),%R[bullet()]See a note with [hilight(+note <notename>)].,[space(4)]You have no +notes! Write one with "[hilight(+note/write <title>=<contents>)].")]%R[u(v(db`notes)/helper)][footer()]
+&read.own [v(global`notes)]=$+note *:@fo %#=+note/see [if(strmatch(%0,*/*),first(%0,/),me)]/[last(%0,/)]
+&interact`see [v(db`notes)]=[heading( name(u(v(db`sql)/get`note`target,%0)) / [u(v(db`sql)/get`note`title,%0)] )]%R [u(v(db`sql)/get`note`contents,%0)][u(show`note.details,%0)]%R[footer()]
+
+
+@@Update
+&interact`rename [v(db`notes)]=[prefix()][name(r(target))]'s "[u(v(db`sql)/get`note`title,%0)]" note is now "%1".[u(v(db`sql)/set`note`title,%0,%1)] 
+&interact`edit [v(db`notes)]=[u(v(db`sql)/set`note`contents,%0,edit( u(v(db`sql)/get`note`contents,%0) , [first(%1,|)] , [rest(%1,|)] ))][prefix()][name(r(target))]'s "[u(v(db`sql)/get`note`title,%0)]" note has been updated!
+&interact`file [v(db`notes)]=if(setr(parentId,[u(v(db`sql)/get`note`id,r(target),%1)]),[prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note filed under [u(v(db`sql)/get`note`title,r(parentId))]. [u(v(db`sql)/set`note`parent,%0,r(parentId))] ,[error()][name(r(target))] doesn't have a note called "%1" so I cannot file it.)
+&interact`unfile [v(db`notes)]=[u(v(db`sql)/set`note`parent,%0,NULL)][prefix()][u(v(db`sql)/get`note`title,%0)] is now not filed under anything.
+&interact`lock [v(db`notes)]=[setq(monster,u(v(db`sql)/get`monster`id,%1))][setq(sect, u(v(db`sql)/get`sect`id,%1))][setq(stat,u(v(db`sql)/get`stat`id,first(%1,:)))][setq(rating,last(%1,:))][switch([t(r(monster))][t(r(sect))][and(isnum(r(rating)),t(r(stat)))],11*,[error()]I'm not sure if you mean [u(v(db`sql)/get`monster`name,r(monster))] or [u(v(db`sql)/get`sect`name,r(sect))].,10*,[u(v(db`sql)/set`note`monster,%0,r(monster))][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note has been locked to [u(v(db`sql)/get`monster`name,r(monster))] characters.,01*,[u(v(db`sql)/set`note`organization,%0,r(sect))][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note has been locked to [u(v(db`sql)/get`sect`name,r(sect))] characters.,001, [prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note has been locked to characters with a [u(v(db`sql)/get`stat`name,r(stat))] rating of [r(rating)]. [u(v(db`sql)/set`note`stat,%0,r(stat),r(rating))],[error()]I cannot identify a stat or character type by the name "[first(%1,:)]".)][u(show`note.whoCanSee,%0)]
+&interact`staff [v(db`notes)]=[u(v(db`sql)/set`note`staff,%0,true)][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note is now staff only.
+&interact`show [v(db`notes)]=[u(v(db`sql)/set`note`staff,%0,NULL)][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note is no longer staff only.
+&interact`publish [v(db`notes)]=[u(v(db`sql)/set`note`public,%0,true)][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note is now public.[u(show`note.whoCanSee,%0)]
+&interact`private [v(db`notes)]=[u(v(db`sql)/set`note`public,%0,false)][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note is now private.[u(show`note.whoCanSee,%0)]
+&interact`approve [v(db`notes)]=[u(v(db`sql)/set`note`approved,%0,true)][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note is now approved.
+&interact`revoke [v(db`notes)]=[u(v(db`sql)/set`note`approved,%0,false)][prefix()][name(r(target))]'s [u(v(db`sql)/get`note`title,%0)] note is now no longer approved.
+&interact`unlock [v(db`notes)]=[u(v(db`sql)/set`note`monster,%0,NULL)][u(v(db`sql)/set`note`organization,%0,NULL)][u(v(db`sql)/set`note`monster,%0,NULL)][prefix()]All the locks on [u(v(db`sql)/get`note`title,%0)] have been cleared.[u(show`note.whoCanSee,%0)]
+
+@@Delete
+&interact`delete [v(db`notes)]=[prefix()][name(r(target))]'s "[u(v(db`sql)/get`note`title,%0)]" note has been deleted.[u(v(db`sql)/delete`note,%0)]
+
+
+@@ @@@@@@@@@@@@@@@@@@@@@@
+@@
+@@ Helpfile Content!
+@@
+@@ @@@@@@@@@@@@@@@@@@@@@@
+
+&HELP`+NOTES [v(db`notes)]=%b[hilight(+notes)] shows you all of your own notes.
+&HELP`+NOTES_TARGET [v(db`notes)]=%B[hilight(+notes <target>)] shows you a target's notes.[bullet()]"+notes here" shows you notes on the location you're in.[bullet()]"+notes <name>" shows you notes of another character.[bullet()]"+notes <location>" shows you notes of another location.
+&HELP`+NOTE_SEE [v(db`notes)]=%B[hilight(+note <name of note>)] shows you your own note by that name.
+&HELP`INTERACT [v(db`notes)]=%B[iter( see edit delete file unfile publish private rename lock ,[u(help`interact-##)]%R)][if(isStaff(%#),%R[lheading(Staff Commands)]%R [iter( staff show approve revoke ,[u(help`interact-##)]%R)] %R[space(4)]"Target" can be a character\, an NPC\, "here" (for the room you're standing in) or a room name (like "occult bookstore").  You can also use DBREFs of characters and places.%R[footer()] )]
+&HELP`INTERACT-APPROVE [v(db`notes)]=[hilight(+note/approve <target>/<note name>)] approves a note.
+&HELP`INTERACT-DELETE [v(db`notes)]=[hilight(+note/delete <note>)] will delete a note.
+&HELP`INTERACT-EDIT [v(db`notes)]=[hilight(+note/edit <note>=<old text>|<new text>)] edits a note.[bullet()]Case sensitive.  Differentiate the old and new with "|" in between.[bullet()]This is for editing partial text, but you can also just replace notes.
+&HELP`INTERACT-FILE [v(db`notes)]=[hilight(+note/file <note>=<other note>)] sorts a note under the other note.[bullet()]You can file notes hierarchically.[bullet()]Notes that are sorted appear in the notes they're filed under.
+&HELP`INTERACT-LOCK [v(db`notes)]=[hilight(+note/lock <note>=<lock>)] locks your note so only certain people can see.[bullet()]<lock> can be a clan or craft name, like "brujah" or "order of hermes".[bullet()]<lock> can be an organization or sect, like "sabbat" or "anarchs".[bullet()]<lock> can be a  splat like "mage", "sorcerer", "vampire" or "ghoul".[bullet()]<lock> can be a stat: <stat>:<#>, like +note/lock mynote=streetwise:3.
+&HELP`INTERACT-PRIVATE [v(db`notes)]=[hilight(+note/private <note>)] hides your note from other players.[bullet()]Notes are hidden from other players by default but can be published.[bullet()]Privatized notes can still be read by staff.
+&HELP`INTERACT-PUBLISH [v(db`notes)]=[hilight(+note/publish <note>)] makes your note visible to players.
+&HELP`INTERACT-RENAME [v(db`notes)]=[hilight(+note/rename <note>=<new name>)] renames a note.
+&HELP`INTERACT-REVOKE [v(db`notes)]=[hilight(+note/revoke <target>/<note>)] makes a note no longer approved.
+&HELP`INTERACT-SEE [v(db`notes)]=[hilight(+note/see <note>)] shows you a note by that name.[bullet()]"note" can be the name of one of your own notes by itself.[bullet()]"note" be <person with note>/<name of note>.[bullet()] Example: "+note/see billy/overview".
+&HELP`INTERACT-SHOW [v(db`notes)]=[hilight(+note/show <target>/<note>)] makes a note visible to players.
+&HELP`INTERACT-STAFF [v(db`notes)]=[hilight(+note/staff <target>/<note>)] makes a note invisible to players.[bullet()]Notes that staff set are visible by default and must be /staffed to hide.[bullet()]Notes are hidden if the character has no IC means of knowing its contents.
+&HELP`INTERACT-UNFILE [v(db`notes)]=[hilight(+note/unfile <note>)] removes a note's hierarchical sorting set by 'file'.
+&HELP`INTERACT-WRITE [v(db`notes)]=[hilight(+note/write <title>=<content>)] writes a note on you.%R%B[hilight(+note/write <target>/<title>=<content>)] writes a note on someone else.[bullet()]+note/set does the same thing as +note/write and can be used the same way.
+&HELP`LISTALLNOTES [v(db`notes)]=%B[hilight(+notes/all <target>)] reads all of a target's notes.
+
+@@ Ensuring the +help command works:
+think if(v(db`help),[ansi(hg,+)] Already have the Help Functions Object., [ansi(hw,-)] Making the Help Database Object. [set(me,db`help:[create(FUNCTIONS: Helpfiles <helpFns>)])])
+think if(v(global`help),[ansi(hg,+)] Already have the Help Global., [ansi(hw,-)] Making the Help Global. [set(me,global`help:[create(GLOBAL: Helpfiles <helpCmds>)])])
+&db`help bigref=[v(db`help)]
+&global`help bigref=[v(global`help)]
+@parent helpFns=[v(db`bigref)]
+@set helpfns=wizard
+&HELP helpFns = iter(lattr(v(global`%0)/cmd`**), %R[if(get(v(db`%0)/help`[rest(##,`)]), u(v(db`%0)/help`[rest(##,`)]) , [ansi(hr, Documentation is missing for %0: [rest(##,`)] command! )] %R)
+&helpindex helpFns = [heading(Command Help!)]%R[lattr([get(me/db`ancestor)]/global`*)][table(iter(lattr([v(db`ancestor)]/global`),[space(4)][lcstr(rest(##,`))],,|), 20,80,|)]%R%R[space(4)]Type "[hilight(+help <subject>)]" for more information.%R[footer()]
