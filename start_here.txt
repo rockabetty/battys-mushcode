@@ -1,0 +1,70 @@
+@@ @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@
+@@ Batty's MUSH Code - Starter Package!
+@@ This is a required file, you gotta start here, Morty. Start here for grandpa.
+@@ For this to work, you need a turbonerd to install SQL.
+@@
+@@ @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+@@ @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@
+@@ Organizing Objects
+@@
+@@ @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+think if(v(db`bigRef),[ansi(hg,+)] Already have the Reference Object., [ansi(hw,-)] Making the Reference Object. [set(me,db`bigRef:[create(FUNCTIONS: Batty's Big Reference Object <BIGREF>)])])
+
+&isStaff bigref = or(hasflag(edit(%0,me,%#),Royalty),hasflag(edit(%0,me,%#),Wizard))
+@startup bigRef = @function isStaff=[num(me)]/isStaff
+@trigger bigRef/startup
+
+@@ @@@@@@@@@@@@@@
+@@ Helpfiles
+@@ @@@@@@@@@@@@@@
+
+think if(v(db`help),[ansi(hg,+)] Already have the Help Functions Object., [ansi(hw,-)] Making the Help Database Object. [set(me,db`help:[create(FUNCTIONS: Helpfiles <helpFns>)])])
+think if(v(global`help),[ansi(hg,+)] Already have the Help Global., [ansi(hw,-)] Making the Help Global. [set(me,global`help:[create(GLOBAL: Helpfiles <helpCmds>)])])
+&db`help bigref=[v(db`help)]
+&global`help bigref=[v(global`help)]
+@parent helpFns=[v(db`bigref)]
+@set helpfns=wizard
+&HELP helpFns = iter(lattr(v(global`%0)/cmd`**), %R[if(get(v(db`%0)/help`[rest(##,`)]), u(v(db`%0)/help`[rest(##,`)]) , [ansi(hr, Documentation is missing for %0: [rest(##,`)] command! )] %R)
+&helpindex helpFns = [heading(Command Help!)]%R[lattr([get(me/db`ancestor)]/global`*)][table(iter(lattr([v(db`ancestor)]/global`),[space(4)][lcstr(rest(##,`))],,|), 20,80,|)]%R%R[space(4)]Type "[hilight(+help <subject>)]" for more information.%R[footer()]
+
+
+@@ @@@@@@@@@@@@@@
+@@ The Prettifier
+@@ @@@@@@@@@@@@@@
+
+think if(v(db`Pretty),[ansi(hg,+)] Already have the Pretty Object., [ansi(hw,-)] Making the Pretty Object. [set(me,db`Pretty:[create(FUNCTIONS: Prettifying Object <PRETTY> )])])
+@desc <PRETTY> = This object is where you put all your formatting stuff to make the game nice and uniform.
+&db`pretty <BIGREF> = [v(db`pretty)]
+
+&BULLET <PRETTY>=%R[space(4)][ansi(hx,*)]%B
+&COLOR <PRETTY>=[ansi(first([get(%#/color`main)] y),%0)]
+&COLUMN_HEADINGS_3 <PRETTY>=iter(%0,center(%B##%B,22,color(-)),|,space(4))
+&ERROR <PRETTY>=[ansi(hr,<!>)]%B%0
+&FOOTER <PRETTY>=%R[color(repeat(-,79))]
+&HEADING <PRETTY>=[center([hilight(%[%0%])],79,color(-))]%R
+&HILIGHT <PRETTY>=[ansi(first([get(%#/color`highlight)] hw),%0)]
+&LHEADING <PRETTY>=[color(----)][hilight(%[)][ljust( [hilight(%0)][hilight(%])],74,[color(-)],1)]%R
+&PREFIX <PRETTY>=[hilight(>)]%B
+&STAFFPREFIX <PRETTY>=[ansi(<255 255 0>,*> STAFF NOTICE:%B)]
+&STARTUP <PRETTY>=@function heading=[num(me)]/heading;@function footer=[num(me)]/footer;@function error=[num(me)]/error;@function prefix=[num(me)]/prefix;@function lheading=[num(me)]/lheading;@function hilight=[num(me)]/hilight;@function bullet =[num(me)]/bullet
+@trigger <PRETTY>/startup
+
+
+@@ @@@@@@@@@@@@@@
+@@ SQL/Database Access
+@@ @@@@@@@@@@@@@@
+
+think if( v(db`SQL),[ansi(hg,+)] Already have the SQL Object., [ansi(hw,-)] Making the SQL Object. [set(me,db`SQL:[create(FUNCTIONS: SQL Object <SQL> )])] )
+@desc <SQL> = This object is responsible for interacting with the SQL database.
+@power <SQL> = SQL_OK
+
+@@ You will need an object for SQL access.
+think if(not(v(db`sql)),set(me,db`sql:[create(FUNCTIONS: SQL Access )]))  
+@set [v(db`sql)] = WIZARD
+
+
+&where`textlike [v(db`sql)]=if(strmatch(%1,*"*),lower(%0) = '[sqlescape(edit(lcstr(%1),",))]' , lower(%0) like '[lcstr(sqlescape(%1))]%%')
